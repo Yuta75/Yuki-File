@@ -42,13 +42,17 @@ async def start_command(client: Client, message: Message):
                 [[InlineKeyboardButton("Contact Support", url=BAN_SUPPORT)]]
             )
         )
-    # ✅ Check Force Subscription
-    if not await is_subscribed(client, user_id):
-        #await temp.delete()
-        return await not_joined(client, message)
 
-    # File auto-delete time in seconds (Set your desired time in seconds here)
-    FILE_AUTO_DELETE = await db.get_del_timer()  # Example: 3600 seconds (1 hour)
+    # --- NEW: FETCH SETTINGS FROM DB ---
+    bot_settings = await db.get_settings()
+    
+    # ✅ Check Force Subscription (Dynamic Toggle)
+    if bot_settings.get('fsub_mode', True):
+        if not await is_subscribed(client, user_id):
+            return await not_joined(client, message)
+
+    # File auto-delete time fetched from DB
+    FILE_AUTO_DELETE = await db.get_del_timer() 
 
     # Add user if not already present
     if not await db.present_user(user_id):
@@ -98,9 +102,17 @@ async def start_command(client: Client, message: Message):
         codeflix_msgs = []
 
         for msg in messages:
+            # --- NEW: DYNAMIC CAPTION LOGIC ---
             original_caption = msg.caption.html if msg.caption else ""
-            caption = f"{original_caption}\n\n{CUSTOM_CAPTION}" if CUSTOM_CAPTION else original_caption
+            if bot_settings.get('custom_caption', True):
+                caption = f"{original_caption}\n\n{CUSTOM_CAPTION}" if CUSTOM_CAPTION else original_caption
+            else:
+                caption = original_caption
+
             reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
+
+            # --- NEW: DYNAMIC PROTECT CONTENT LOGIC ---
+            protect = bot_settings.get('protect_content', False)
 
             try:
                 snt_msg = await msg.copy(
@@ -108,7 +120,7 @@ async def start_command(client: Client, message: Message):
                     caption=caption,
                     parse_mode=ParseMode.HTML,
                     reply_markup=reply_markup,
-                    protect_content=PROTECT_CONTENT
+                    protect_content=protect
                 )
                 await asyncio.sleep(0.5)
                 codeflix_msgs.append(snt_msg)
@@ -119,7 +131,7 @@ async def start_command(client: Client, message: Message):
                     caption=caption,
                     parse_mode=ParseMode.HTML,
                     reply_markup=reply_markup,
-                    protect_content=PROTECT_CONTENT
+                    protect_content=protect
                 )
                 codeflix_msgs.append(copied_msg)
             except:
@@ -158,13 +170,11 @@ async def start_command(client: Client, message: Message):
     else:
         reply_markup = InlineKeyboardMarkup(
             [
-                    [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/+rt0k66qGSK83NDRl")],
-
-    [
+                [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/+rt0k66qGSK83NDRl")],
+                [
                     InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data = "about"),
                     InlineKeyboardButton('ʜᴇʟᴘ •', callback_data = "help")
-
-    ]
+                ]
             ]
         )
         await message.reply_photo(
@@ -182,11 +192,9 @@ async def start_command(client: Client, message: Message):
         return
 
 
-
 #=====================================================================================##
 # Don't Remove Credit @CodeFlix_Bots, @rohit_1888
 # Ask Doubt on telegram @CodeflixSupport
-
 
 
 # Create a global dictionary to store chat data
@@ -272,13 +280,15 @@ async def not_joined(client: Client, message: Message):
     except Exception as e:
         print(f"Final Error: {e}")
         await temp.edit(
-            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @rohit_1888</i></b>\n"
+            f"<b><i>! Eʀʀᴏʀ, Cᴏɴᴛᴀᴄᴛ ᴅᴇᴠᴇʟᴏᴘᴇʀ ᴛᴏ sᴏʟᴠᴇ ᴛʜᴇ ɪssᴜᴇs @VoidxTora</i></b>\n"
             f"<blockquote expandable><b>Rᴇᴀsᴏɴ:</b> {e}</blockquote>"
         )
 
 #=====================================================================================##
 
-@Bot.on_message(filters.command('commands') & filters.private & admin)
+@Bot.on_message(filters.command('commands') & filters.private)
 async def bcmd(bot: Bot, message: Message):        
+    if not await check_admin_or_owner(message):
+        return
     reply_markup = InlineKeyboardMarkup([[InlineKeyboardButton("• ᴄʟᴏsᴇ •", callback_data = "close")]])
     await message.reply(text=CMD_TXT, reply_markup = reply_markup, quote= True)
