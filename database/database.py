@@ -32,6 +32,32 @@ class Rohit:
         self.rqst_fsub_data = self.database['request_forcesub']
         self.rqst_fsub_Channel_data = self.database['request_forcesub_channel']
         
+        # --- NEW COLLECTION ADDED ---
+        self.settings_data = self.database['settings']
+
+
+    # --- NEW SETTINGS METHODS ---
+    async def get_settings(self):
+        """Fetch bot settings, creating defaults if they don't exist."""
+        settings = await self.settings_data.find_one({'_id': 'bot_settings'})
+        if not settings:
+            default_settings = {
+                '_id': 'bot_settings',
+                'protect_content': False,
+                'fsub_mode': True,
+                'custom_caption': True
+            }
+            await self.settings_data.insert_one(default_settings)
+            return default_settings
+        return settings
+
+    async def update_setting(self, key: str, value):
+        """Update a specific setting by key."""
+        await self.settings_data.update_one(
+            {'_id': 'bot_settings'},
+            {'$set': {key: value}},
+            upsert=True
+        )
 
 
     # USER DATA
