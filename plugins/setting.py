@@ -1,6 +1,6 @@
 # settings.py
 # ⚙️ Full Settings Panel — All 8 Sections
-# Credits: @VoidXTora | Based for CosmicBotz FileStore
+# Credits: @VoidXTora | CosmicBotz FileStore
 
 import asyncio
 from pyrogram import Client, filters
@@ -12,7 +12,7 @@ from pyrogram.types import (
 )
 from pyrogram.errors import MessageNotModified
 
-from config import OWNER_ID, USER_REPLY_TEXT
+from config import OWNER_ID, USER_REPLY_TEXT, CUSTOM_CAPTION
 from bot import Bot
 from database.database import db
 from plugins.VoidXTora import check_admin_or_owner
@@ -51,7 +51,7 @@ def main_settings_markup() -> InlineKeyboardMarkup:
         [InlineKeyboardButton("🔄 Rᴇǫ Fᴏʀᴄᴇ Sᴜʙ", callback_data="cfg_reqfsub")],
         [InlineKeyboardButton("💰 Vᴇʀɪꜰʏ Sᴇᴛᴛɪɴɢs", callback_data="cfg_verify")],
         [InlineKeyboardButton("✍️ Cᴀᴘᴛɪᴏɴ Sᴇᴛᴛɪɴɢs", callback_data="cfg_caption")],
-        [InlineKeyboardButton("Cʟᴏsᴇ ✖", callback_data="cfg_close")],
+        [InlineKeyboardButton("Cʟᴏsᴇ ✖", callback_data="close")],
     ])
 
 MAIN_TEXT = (
@@ -109,22 +109,15 @@ async def fsub_text_markup(client: Client):
 
 async def admins_text_markup():
     admin_ids = await db.get_all_admins()
-    if admin_ids:
-        lines = "\n".join(
-            f"<blockquote>◈ <code>{aid}</code></blockquote>" for aid in admin_ids
-        )
-    else:
-        lines = "<blockquote>❌ Nᴏ ᴀᴅᴍɪɴs ꜰᴏᴜɴᴅ.</blockquote>"
+    lines = "\n".join(
+        f"<blockquote>◈ <code>{aid}</code></blockquote>" for aid in admin_ids
+    ) if admin_ids else "<blockquote>❌ Nᴏ ᴀᴅᴍɪɴs ꜰᴏᴜɴᴅ.</blockquote>"
 
     text = (
-        "<b>👑 Aᴅᴍɪɴs Lɪsᴛ</b>\n\n"
-        + lines
+        "<b>👑 Aᴅᴍɪɴs Lɪsᴛ</b>\n\n" + lines
         + "\n\n<i>/add_admin [id] — Aᴅᴅ\n/deladmin [id] — Rᴇᴍᴏᴠᴇ</i>"
     )
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")]
-    ])
-    return text, markup
+    return text, InlineKeyboardMarkup([[InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")]])
 
 
 # ─────────────────────────────────────────────
@@ -133,22 +126,15 @@ async def admins_text_markup():
 
 async def banned_text_markup():
     banned = await db.get_ban_users()
-    if banned:
-        lines = "\n".join(
-            f"<blockquote>◈ <code>{uid}</code></blockquote>" for uid in banned
-        )
-    else:
-        lines = "<blockquote>✅ Nᴏ ʙᴀɴɴᴇᴅ ᴜsᴇʀs.</blockquote>"
+    lines = "\n".join(
+        f"<blockquote>◈ <code>{uid}</code></blockquote>" for uid in banned
+    ) if banned else "<blockquote>✅ Nᴏ ʙᴀɴɴᴇᴅ ᴜsᴇʀs.</blockquote>"
 
     text = (
-        "<b>🚫 Bᴀɴɴᴇᴅ Usᴇʀs</b>\n\n"
-        + lines
+        "<b>🚫 Bᴀɴɴᴇᴅ Usᴇʀs</b>\n\n" + lines
         + "\n\n<i>/ban [id] — Bᴀɴ\n/unban [id] — Uɴʙᴀɴ\n/banlist — Fᴜʟʟ ʟɪsᴛ</i>"
     )
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")]
-    ])
-    return text, markup
+    return text, InlineKeyboardMarkup([[InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")]])
 
 
 # ─────────────────────────────────────────────
@@ -161,18 +147,16 @@ async def autodelete_text_markup():
     text = (
         "<b>⏱ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ Sᴇᴛᴛɪɴɢs</b>\n\n"
         f"<blockquote>◈ Cᴜʀʀᴇɴᴛ Tɪᴍᴇʀ: {status}</blockquote>\n\n"
-        "<i>/dlt_time [seconds] — Sᴇᴛ ᴛɪᴍᴇʀ\n"
-        "/check_dlt_time — Cʜᴇᴄᴋ ᴄᴜʀʀᴇɴᴛ ᴛɪᴍᴇʀ\n"
-        "Set 0 ᴛᴏ ᴅɪsᴀʙʟᴇ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ.</i>"
+        "<i>/dlt_time [seconds] — Sᴇᴛ ᴛɪᴍᴇʀ\nSet 0 ᴛᴏ ᴅɪsᴀʙʟᴇ.</i>"
     )
     markup = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("⏱ Sᴇᴛ 5ᴍ", callback_data="adel_300"),
-            InlineKeyboardButton("⏱ Sᴇᴛ 10ᴍ", callback_data="adel_600"),
-            InlineKeyboardButton("⏱ Sᴇᴛ 30ᴍ", callback_data="adel_1800"),
+            InlineKeyboardButton("⏱ 5ᴍ", callback_data="adel_300"),
+            InlineKeyboardButton("⏱ 10ᴍ", callback_data="adel_600"),
+            InlineKeyboardButton("⏱ 30ᴍ", callback_data="adel_1800"),
         ],
         [
-            InlineKeyboardButton("⏱ Sᴇᴛ 1ʜ", callback_data="adel_3600"),
+            InlineKeyboardButton("⏱ 1ʜ", callback_data="adel_3600"),
             InlineKeyboardButton("❌ Dɪsᴀʙʟᴇ", callback_data="adel_0"),
         ],
         [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")],
@@ -192,21 +176,19 @@ async def files_text_markup():
 
     text = (
         "<b>📁 Fɪʟᴇs Rᴇʟᴀᴛᴇᴅ Sᴇᴛᴛɪɴɢs ⚙️</b>\n\n"
-        f"<blockquote>"
+        "<blockquote>"
         f"🔒 ᴘʀᴏᴛᴇᴄᴛ ᴄᴏɴᴛᴇɴᴛ: {'Eɴᴀʙʟᴇᴅ ✅' if protect else 'Dɪsᴀʙʟᴇᴅ ❌'}\n"
         f"😶 ʜɪᴅᴇ ᴄᴀᴘᴛɪᴏɴ: {'Eɴᴀʙʟᴇᴅ ✅' if hide_cap else 'Dɪsᴀʙʟᴇᴅ ❌'}\n"
         f"🔘 ᴄʜᴀɴɴᴇʟ ʙᴜᴛᴛᴏɴ: {'Eɴᴀʙʟᴇᴅ ✅' if chnl_btn else 'Dɪsᴀʙʟᴇᴅ ❌'}"
-        f"</blockquote>\n\n"
-        "<i>Cʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴs ᴛᴏ ᴛᴏɢɢʟᴇ sᴇᴛᴛɪɴɢs.</i>"
+        "</blockquote>\n\n"
+        "<i>Cʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴs ᴛᴏ ᴛᴏɢɢʟᴇ.</i>"
     )
     markup = InlineKeyboardMarkup([
         [
-            InlineKeyboardButton(f"Pʀᴏᴛᴇᴄᴛ Cᴏɴᴛᴇɴᴛ: {tick(protect)}", callback_data="files_protect"),
-            InlineKeyboardButton(f"Hɪᴅᴇ Cᴀᴘᴛɪᴏɴ: {tick(hide_cap)}", callback_data="files_hidecap"),
+            InlineKeyboardButton(f"🔒 Pʀᴏᴛᴇᴄᴛ: {tick(protect)}", callback_data="files_protect"),
+            InlineKeyboardButton(f"😶 Hɪᴅᴇ Cᴀᴘ: {tick(hide_cap)}", callback_data="files_hidecap"),
         ],
-        [
-            InlineKeyboardButton(f"Cʜᴀɴɴᴇʟ Bᴜᴛᴛᴏɴ: {tick(chnl_btn)}", callback_data="files_chnlbtn"),
-        ],
+        [InlineKeyboardButton(f"🔘 Cʜɴʟ Bᴛɴ: {tick(chnl_btn)}", callback_data="files_chnlbtn")],
         [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")],
     ])
     return text, markup
@@ -235,13 +217,9 @@ async def reqfsub_text_markup(client: Client):
     text = (
         "<b>🔄 Rᴇǫᴜᴇsᴛ Fᴏʀᴄᴇ Sᴜʙ Sᴇᴛᴛɪɴɢs</b>\n\n"
         + lines
-        + "\n<i>Usᴇ /fsub_mode ᴛᴏ ᴛᴏɢɢʟᴇ ᴍᴏᴅᴇ ᴘᴇʀ ᴄʜᴀɴɴᴇʟ.\n"
-        "Rᴇǫ Mᴏᴅᴇ: ᴜsᴇʀs sᴇɴᴅ ᴀ ᴊᴏɪɴ ʀᴇǫᴜᴇsᴛ ɪɴsᴛᴇᴀᴅ ᴏꜰ ᴅɪʀᴇᴄᴛʟʏ ᴊᴏɪɴɪɴɢ.</i>"
+        + "\n<i>Usᴇ /fsub_mode ᴛᴏ ᴛᴏɢɢʟᴇ ᴍᴏᴅᴇ ᴘᴇʀ ᴄʜᴀɴɴᴇʟ.</i>"
     )
-    markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")]
-    ])
-    return text, markup
+    return text, InlineKeyboardMarkup([[InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")]])
 
 
 # ─────────────────────────────────────────────
@@ -251,45 +229,129 @@ async def reqfsub_text_markup(client: Client):
 async def verify_text_markup():
     cfg = await db.get_settings()
     verify_on = cfg.get("verify_enabled", False)
-
     text = (
         "<b>💰 Vᴇʀɪꜰʏ Sᴇᴛᴛɪɴɢs</b>\n\n"
         f"<blockquote>◈ Vᴇʀɪꜰɪᴄᴀᴛɪᴏɴ: {'Eɴᴀʙʟᴇᴅ ✅' if verify_on else 'Dɪsᴀʙʟᴇᴅ ❌'}</blockquote>\n\n"
-        "<i>Wʜᴇɴ ᴇɴᴀʙʟᴇᴅ, ᴜsᴇʀs ᴍᴜsᴛ ᴄᴏᴍᴘʟᴇᴛᴇ ᴀ ᴠᴇʀɪꜰɪᴄᴀᴛɪᴏɴ sᴛᴇᴘ\n"
-        "ʙᴇꜰᴏʀᴇ ᴀᴄᴄᴇssɪɴɢ ꜰɪʟᴇs.</i>"
+        "<i>Wʜᴇɴ ᴇɴᴀʙʟᴇᴅ, ᴜsᴇʀs ᴍᴜsᴛ ᴄᴏᴍᴘʟᴇᴛᴇ ᴀ ᴠᴇʀɪꜰɪᴄᴀᴛɪᴏɴ sᴛᴇᴘ ʙᴇꜰᴏʀᴇ ᴀᴄᴄᴇssɪɴɢ ꜰɪʟᴇs.</i>"
     )
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            f"Vᴇʀɪꜰɪᴄᴀᴛɪᴏɴ: {tick(verify_on)}",
-            callback_data="verify_toggle"
-        )],
+        [InlineKeyboardButton(f"Vᴇʀɪꜰɪᴄᴀᴛɪᴏɴ: {tick(verify_on)}", callback_data="verify_toggle")],
         [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")],
     ])
     return text, markup
 
 
 # ─────────────────────────────────────────────
-# 8. CAPTION SETTINGS
+# 8. CAPTION SETTINGS  (Template Mode)
 # ─────────────────────────────────────────────
+
+CAPTION_VARIABLES = (
+    "<blockquote expandable>"
+    "<b>📝 Aᴠᴀɪʟᴀʙʟᴇ Vᴀʀɪᴀʙʟᴇs:</b>\n"
+    "<code>{caption}</code> — Oʀɪɢɪɴᴀʟ ꜰɪʟᴇ ᴄᴀᴘᴛɪᴏɴ\n"
+    "<code>{title}</code> — Fɪʟᴇ / sʜᴏᴡ ᴛɪᴛʟᴇ\n"
+    "<code>{episode}</code> — Eᴘɪsᴏᴅᴇ ɴᴜᴍʙᴇʀ\n"
+    "<code>{season}</code> — Sᴇᴀsᴏɴ ɴᴜᴍʙᴇʀ\n"
+    "<code>{quality}</code> — Qᴜᴀʟɪᴛʏ (480ᴘ/720ᴘ etc)\n"
+    "<code>{language}</code> — Lᴀɴɢᴜᴀɢᴇ\n"
+    "<code>{audio}</code> — Aᴜᴅɪᴏ ᴛʏᴘᴇ\n"
+    "<code>{size}</code> — Fɪʟᴇ sɪᴢᴇ"
+    "</blockquote>"
+)
+
+# Tracks admins currently waiting to send a template
+_awaiting_template: set = set()
 
 async def caption_text_markup():
     cfg = await db.get_settings()
     cap_on = cfg.get("custom_caption", True)
+    tmpl_on = cfg.get("caption_template_enabled", False)
+    template = cfg.get("caption_template", "")
+    tmpl_preview = (
+        f"\n\n<blockquote>📄 <b>Cᴜʀʀᴇɴᴛ Tᴇᴍᴘʟᴀᴛᴇ:</b>\n<code>{template}</code></blockquote>"
+        if template else "\n\n<blockquote>📄 <b>Tᴇᴍᴘʟᴀᴛᴇ:</b> Nᴏᴛ sᴇᴛ</blockquote>"
+    )
 
     text = (
         "<b>✍️ Cᴀᴘᴛɪᴏɴ Sᴇᴛᴛɪɴɢs</b>\n\n"
-        f"<blockquote>◈ Cᴜsᴛᴏᴍ Cᴀᴘᴛɪᴏɴ: {'Eɴᴀʙʟᴇᴅ ✅' if cap_on else 'Dɪsᴀʙʟᴇᴅ ❌'}</blockquote>\n\n"
-        "<i>Wʜᴇɴ ᴅɪsᴀʙʟᴇᴅ, ᴛʜᴇ ᴏʀɪɢɪɴᴀʟ ꜰɪʟᴇ ᴄᴀᴘᴛɪᴏɴ ɪs sᴇɴᴛ.\n"
-        "Wʜᴇɴ ᴇɴᴀʙʟᴇᴅ, ʏᴏᴜʀ CUSTOM_CAPTION ꜰʀᴏᴍ ᴄᴏɴꜰɪɢ ɪs ᴜsᴇᴅ.</i>"
+        "<blockquote>"
+        f"◈ Cᴜsᴛᴏᴍ Cᴀᴘᴛɪᴏɴ: {'Eɴᴀʙʟᴇᴅ ✅' if cap_on else 'Dɪsᴀʙʟᴇᴅ ❌'}\n"
+        f"◈ Tᴇᴍᴘʟᴀᴛᴇ Mᴏᴅᴇ: {'Eɴᴀʙʟᴇᴅ ✅' if tmpl_on else 'Dɪsᴀʙʟᴇᴅ ❌'}"
+        "</blockquote>"
+        f"{tmpl_preview}\n\n"
+        + CAPTION_VARIABLES
+        + "\n\n<i>⚠️ Tᴇᴍᴘʟᴀᴛᴇ Mᴏᴅᴇ ᴏᴠᴇʀʀɪᴅᴇs Cᴜsᴛᴏᴍ Cᴀᴘᴛɪᴏɴ ᴡʜᴇɴ ᴇɴᴀʙʟᴇᴅ.\n"
+        "Usᴇ /setcaption ᴏʀ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ʙᴇʟᴏᴡ ᴛᴏ sᴇᴛ ʏᴏᴜʀ ᴛᴇᴍᴘʟᴀᴛᴇ.</i>"
     )
     markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton(
-            f"Cᴜsᴛᴏᴍ Cᴀᴘᴛɪᴏɴ: {tick(cap_on)}",
-            callback_data="caption_toggle"
-        )],
+        [
+            InlineKeyboardButton(f"Cᴜsᴛᴏᴍ Cᴀᴘ: {tick(cap_on)}", callback_data="caption_toggle"),
+            InlineKeyboardButton(f"Tᴇᴍᴘʟᴀᴛᴇ: {tick(tmpl_on)}", callback_data="caption_tmpl_toggle"),
+        ],
+        [InlineKeyboardButton("📝 Sᴇᴛ Tᴇᴍᴘʟᴀᴛᴇ", callback_data="caption_set_tmpl")],
+        [InlineKeyboardButton("🗑 Cʟᴇᴀʀ Tᴇᴍᴘʟᴀᴛᴇ", callback_data="caption_clear_tmpl")],
         [InlineKeyboardButton("◁ Bᴀᴄᴋ", callback_data="cfg_back")],
     ])
     return text, markup
+
+
+# ─────────────────────────────────────────────
+# /setcaption COMMAND
+# ─────────────────────────────────────────────
+
+@Bot.on_message(filters.command("setcaption") & filters.private)
+async def setcaption_cmd(client: Client, message: Message):
+    if not await check_admin_or_owner(message):
+        return
+    _awaiting_template.add(message.from_user.id)
+    await message.reply(
+        "<b>✍️ Sᴇɴᴅ ʏᴏᴜʀ ᴄᴀᴘᴛɪᴏɴ ᴛᴇᴍᴘʟᴀᴛᴇ ɴᴏᴡ.</b>\n\n"
+        + CAPTION_VARIABLES
+        + "\n\n<b>Exᴀᴍᴘʟᴇ:</b>\n"
+          "<code>🎬 {title}\n📺 S{season}E{episode}\n"
+          "🎞 {quality} | {language}\n📁 {size}\n\n{caption}</code>\n\n"
+          "<i>Sᴇɴᴅ /cancel ᴛᴏ ᴀʙᴏʀᴛ.</i>",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("❌ Cᴀɴᴄᴇʟ", callback_data="caption_cancel_set")
+        ]])
+    )
+
+
+@Bot.on_message(filters.command("cancel") & filters.private)
+async def cancel_template(client: Client, message: Message):
+    if message.from_user.id in _awaiting_template:
+        _awaiting_template.discard(message.from_user.id)
+        await message.reply("<b>❌ Cᴀɴᴄᴇʟʟᴇᴅ.</b>")
+
+
+# Template text receiver — must be low priority, catches only users in awaiting set
+@Bot.on_message(filters.private & filters.text, group=10)
+async def caption_template_receiver(client: Client, message: Message):
+    user_id = message.from_user.id
+    if user_id not in _awaiting_template:
+        return
+
+    # Ignore commands
+    if message.text and message.text.startswith("/"):
+        return
+
+    _awaiting_template.discard(user_id)
+    template = message.text.strip()
+
+    if not template:
+        await message.reply("<b>❌ Empty template. Aborted.</b>")
+        return
+
+    await db.update_setting("caption_template", template)
+    await db.update_setting("caption_template_enabled", True)
+
+    await message.reply(
+        "<b>✅ Cᴀᴘᴛɪᴏɴ ᴛᴇᴍᴘʟᴀᴛᴇ sᴀᴠᴇᴅ ᴀɴᴅ ᴇɴᴀʙʟᴇᴅ!</b>\n\n"
+        f"<blockquote><code>{template}</code></blockquote>",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton("⚙️ Cᴀᴘᴛɪᴏɴ Sᴇᴛᴛɪɴɢs", callback_data="cfg_caption")
+        ]])
+    )
 
 
 # ─────────────────────────────────────────────
@@ -305,19 +367,10 @@ async def settings_callback(client: Client, cb: CallbackQuery):
 
     data = cb.data
 
-    # ── MAIN MENU ──
     if data == "cfg_back":
         await safe_edit(cb, MAIN_TEXT, main_settings_markup())
         await cb.answer()
 
-    elif data == "cfg_close":
-        try:
-            await cb.message.delete()
-        except Exception:
-            pass
-        await cb.answer()
-
-    # ── SECTION ROUTERS ──
     elif data == "cfg_fsub":
         text, markup = await fsub_text_markup(client)
         await safe_edit(cb, text, markup)
@@ -358,7 +411,7 @@ async def settings_callback(client: Client, cb: CallbackQuery):
         await safe_edit(cb, text, markup)
         await cb.answer()
 
-    # ── FORCE SUB ACTIONS ──
+    # Force Sub actions
     elif data.startswith("fsub_del_"):
         cid = int(data.split("fsub_del_")[1])
         await db.rem_channel(cid)
@@ -369,22 +422,20 @@ async def settings_callback(client: Client, cb: CallbackQuery):
     elif data.startswith("fsub_mode_"):
         cid = int(data.split("fsub_mode_")[1])
         cur = await db.get_channel_mode(cid)
-        new_mode = "off" if cur == "on" else "on"
-        await db.set_channel_mode(cid, new_mode)
+        await db.set_channel_mode(cid, "off" if cur == "on" else "on")
         text, markup = await fsub_text_markup(client)
         await safe_edit(cb, text, markup)
-        await cb.answer(f"Mode set to {new_mode.upper()}")
+        await cb.answer(f"Mode set to {'OFF' if cur == 'on' else 'ON'}")
 
-    # ── AUTO DELETE PRESETS ──
+    # Auto delete presets
     elif data.startswith("adel_"):
         secs = int(data.split("adel_")[1])
         await db.set_del_timer(secs)
         text, markup = await autodelete_text_markup()
         await safe_edit(cb, text, markup)
-        label = f"{secs}s" if secs else "Disabled"
-        await cb.answer(f"✅ Timer set to {label}")
+        await cb.answer(f"✅ Timer set to {secs}s" if secs else "✅ Auto delete disabled")
 
-    # ── FILES SETTINGS TOGGLES ──
+    # Files toggles
     elif data == "files_protect":
         cfg = await db.get_settings()
         await db.update_setting("protect_content", not cfg.get("protect_content", False))
@@ -406,7 +457,7 @@ async def settings_callback(client: Client, cb: CallbackQuery):
         await safe_edit(cb, text, markup)
         await cb.answer("✅ Channel Button toggled!")
 
-    # ── VERIFY TOGGLE ──
+    # Verify toggle
     elif data == "verify_toggle":
         cfg = await db.get_settings()
         await db.update_setting("verify_enabled", not cfg.get("verify_enabled", False))
@@ -414,17 +465,50 @@ async def settings_callback(client: Client, cb: CallbackQuery):
         await safe_edit(cb, text, markup)
         await cb.answer("✅ Verify setting toggled!")
 
-    # ── CAPTION TOGGLE ──
+    # Caption toggles
     elif data == "caption_toggle":
         cfg = await db.get_settings()
         await db.update_setting("custom_caption", not cfg.get("custom_caption", True))
         text, markup = await caption_text_markup()
         await safe_edit(cb, text, markup)
-        await cb.answer("✅ Caption setting toggled!")
+        await cb.answer("✅ Custom Caption toggled!")
+
+    elif data == "caption_tmpl_toggle":
+        cfg = await db.get_settings()
+        await db.update_setting("caption_template_enabled", not cfg.get("caption_template_enabled", False))
+        text, markup = await caption_text_markup()
+        await safe_edit(cb, text, markup)
+        await cb.answer("✅ Template Mode toggled!")
+
+    elif data == "caption_set_tmpl":
+        _awaiting_template.add(cb.from_user.id)
+        await safe_edit(
+            cb,
+            "<b>✍️ Sᴇɴᴅ ʏᴏᴜʀ ᴄᴀᴘᴛɪᴏɴ ᴛᴇᴍᴘʟᴀᴛᴇ ɴᴏᴡ.</b>\n\n"
+            + CAPTION_VARIABLES
+            + "\n\n<b>Exᴀᴍᴘʟᴇ:</b>\n"
+              "<code>🎬 {title}\n📺 S{season}E{episode}\n"
+              "🎞 {quality} | {language}\n📁 {size}\n\n{caption}</code>\n\n"
+              "<i>Sᴇɴᴅ ʏᴏᴜʀ ᴛᴇᴍᴘʟᴀᴛᴇ ᴀs ᴀ ᴍᴇssᴀɢᴇ. /cancel ᴛᴏ ᴀʙᴏʀᴛ.</i>",
+            InlineKeyboardMarkup([[InlineKeyboardButton("❌ Cᴀɴᴄᴇʟ", callback_data="caption_cancel_set")]])
+        )
+        await cb.answer()
+
+    elif data == "caption_clear_tmpl":
+        await db.update_setting("caption_template", "")
+        await db.update_setting("caption_template_enabled", False)
+        text, markup = await caption_text_markup()
+        await safe_edit(cb, text, markup)
+        await cb.answer("🗑 Template cleared!")
+
+    elif data == "caption_cancel_set":
+        _awaiting_template.discard(cb.from_user.id)
+        text, markup = await caption_text_markup()
+        await safe_edit(cb, text, markup)
+        await cb.answer("❌ Cancelled")
 
 
 #=====================================================================================##
 # Credits:- @VoidXTora
-# Maintained by: Mythic_Bots
-# Support: @MythicBot_Support
+# Maintained by: Mythic_Bots | Support: @MythicBot_Support
 #=====================================================================================##
