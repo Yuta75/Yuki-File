@@ -1,3 +1,14 @@
+# Don't Remove Credit @CodeFlix_Bots, @rohit_1888
+# Ask Doubt on telegram @CodeflixSupport
+#
+# Copyright (C) 2025 by Codeflix-Bots@Github, < https://github.com/Codeflix-Bots >.
+#
+# This file is part of < https://github.com/Codeflix-Bots/FileStore > project,
+# and is released under the MIT License.
+# Please see < https://github.com/Codeflix-Bots/FileStore/blob/master/LICENSE >
+#
+# All rights reserved.
+
 import asyncio
 import os
 import random
@@ -13,6 +24,7 @@ from bot import Bot
 from config import *
 from helper_func import *
 from database.database import *
+from caption_parser import apply_template
 
 BAN_SUPPORT = f"{BAN_SUPPORT}"
 
@@ -23,6 +35,36 @@ FILE_ACTIONS = [
     ChatAction.PLAYING,
     ChatAction.UPLOAD_VIDEO_NOTE,
 ]
+
+
+async def build_caption(original: str, file_name: str, settings: dict) -> str:
+    """
+    Priority:
+    1. hide_caption ON  → no caption (None)
+    2. template mode ON → fill template with auto-detected vars
+    3. custom_caption ON → original + CUSTOM_CAPTION suffix
+    4. fallback → original as-is
+    Returns None if caption should be completely hidden.
+    """
+    if settings.get("hide_caption", False):
+        return None  # Signal to send with no caption
+
+    if settings.get("caption_template_enabled", False):
+        template = settings.get("caption_template", "")
+        if template:
+            return apply_template(template, original, file_name)
+
+    if settings.get("custom_caption", True):
+        return f"{original}\n\n{CUSTOM_CAPTION}".strip() if CUSTOM_CAPTION else original
+
+    return original
+
+
+def make_channel_join_markup(channel_title: str, channel_link: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup([[
+        InlineKeyboardButton(f"📢 {channel_title}", url=channel_link)
+    ]])
+
 
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
@@ -57,10 +99,9 @@ async def start_command(client: Client, message: Message):
 
     text = message.text
 
-    # ── FILE DELIVERY ──────────────────────────────────────────
+    # ── FILE DELIVERY ──────────────────────────────────────────────
     if len(text) > 7:
 
-        # Show a random "working" chat action while fetching
         action = random.choice(FILE_ACTIONS)
         await client.send_chat_action(message.chat.id, action)
 
@@ -81,7 +122,6 @@ async def start_command(client: Client, message: Message):
             except Exception as e:
                 print(f"Error decoding IDs: {e}")
                 return
-
         elif len(argument) == 2:
             try:
                 ids = [int(int(argument[1]) / abs(client.db_channel.id))]
@@ -99,17 +139,35 @@ async def start_command(client: Client, message: Message):
         finally:
             await temp_msg.delete()
 
+        # Channel button settings
+        chnl_btn_enabled = bot_settings.get("channel_button", False)
+        chnl_btn_mode = bot_settings.get("channel_button_mode", "each")  # "each" or "end"
+        chnl_btn_title = bot_settings.get("channel_button_title", "📢 Join Channel")
+        chnl_btn_link = bot_settings.get("channel_button_link", "")
+
         codeflix_msgs = []
 
         for msg in messages:
-            # Caption logic — template mode takes priority, then custom caption toggle
             original_caption = msg.caption.html if msg.caption else ""
-            caption = await build_caption(original_caption, bot_settings)
+            # Get filename from media if available
+            file_name = ""
+            for attr in ["document", "video", "audio"]:
+                media = getattr(msg, attr, None)
+                if media and getattr(media, "file_name", None):
+                    file_name = media.file_name
+                    break
 
-            reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
+            caption = await build_caption(original_caption, file_name, bot_settings)
             protect = bot_settings.get('protect_content', False)
 
-            # Keep action alive during multi-file send
+            # Reply markup per file
+            if chnl_btn_enabled and chnl_btn_mode == "each" and chnl_btn_link:
+                reply_markup = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(chnl_btn_title, url=chnl_btn_link)
+                ]])
+            else:
+                reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
+
             await client.send_chat_action(message.chat.id, action)
 
             try:
@@ -135,9 +193,18 @@ async def start_command(client: Client, message: Message):
             except:
                 pass
 
+        # Auto delete + delete notification
         if FILE_AUTO_DELETE > 0:
+            # Channel button at end (on delete alert message)
+            end_btn_markup = None
+            if chnl_btn_enabled and chnl_btn_mode == "end" and chnl_btn_link:
+                end_btn_markup = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(chnl_btn_title, url=chnl_btn_link)
+                ]])
+
             notification_msg = await message.reply(
-                f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>"
+                f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>",
+                reply_markup=end_btn_markup
             )
 
             await asyncio.sleep(FILE_AUTO_DELETE)
@@ -155,32 +222,32 @@ async def start_command(client: Client, message: Message):
                     if message.command and len(message.command) > 1
                     else None
                 )
-                keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)]]
-                ) if reload_url else None
+                # Build final keyboard — reload + channel button if "end" mode
+                final_buttons = []
+                if reload_url:
+                    final_buttons.append([InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)])
+                if chnl_btn_enabled and chnl_btn_mode == "end" and chnl_btn_link:
+                    final_buttons.append([InlineKeyboardButton(chnl_btn_title, url=chnl_btn_link)])
 
                 await notification_msg.edit(
                     "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
-                    reply_markup=keyboard
+                    reply_markup=InlineKeyboardMarkup(final_buttons) if final_buttons else None
                 )
             except Exception as e:
                 print(f"Error updating notification: {e}")
 
-    # ── NORMAL /start ───────────────────────────────────────────
+    # ── NORMAL /start ───────────────────────────────────────────────
     else:
-        # Show typing action for normal start
         await client.send_chat_action(message.chat.id, ChatAction.TYPING)
         await asyncio.sleep(0.6)
 
-        reply_markup = InlineKeyboardMarkup(
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/+rt0k66qGSK83NDRl")],
             [
-                [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/+rt0k66qGSK83NDRl")],
-                [
-                    InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
-                    InlineKeyboardButton('ʜᴇʟᴘ •', callback_data="help")
-                ]
+                InlineKeyboardButton("• ᴀʙᴏᴜᴛ", callback_data="about"),
+                InlineKeyboardButton('ʜᴇʟᴘ •', callback_data="help")
             ]
-        )
+        ])
         await message.reply_photo(
             photo=START_PIC,
             caption=START_MSG.format(
@@ -191,31 +258,9 @@ async def start_command(client: Client, message: Message):
                 id=message.from_user.id
             ),
             reply_markup=reply_markup,
-            message_effect_id=5104841245755180586  # 🔥
+            message_effect_id=5104841245755180586
         )
         return
-
-
-# ── CAPTION BUILDER (used by start.py) ─────────────────────────
-async def build_caption(original: str, settings: dict) -> str:
-    """
-    Priority:
-    1. Template mode (if enabled + template set)
-    2. Custom caption toggle
-    3. Original caption as-is
-    """
-    if settings.get("caption_template_enabled", False):
-        template = settings.get("caption_template", "")
-        if template:
-            # Replace variables in template with original caption content
-            # Variables: {caption}, {filename} — more can be added
-            result = template.replace("{caption}", original)
-            return result
-
-    if settings.get("custom_caption", True):
-        return f"{original}\n\n{CUSTOM_CAPTION}" if CUSTOM_CAPTION else original
-
-    return original
 
 
 #=====================================================================================##
@@ -234,7 +279,6 @@ async def not_joined(client: Client, message: Message):
         all_channels = await db.show_channels()
         for total, chat_id in enumerate(all_channels, start=1):
             mode = await db.get_channel_mode(chat_id)
-
             await message.reply_chat_action(ChatAction.TYPING)
 
             if not await is_sub(client, user_id, chat_id):
