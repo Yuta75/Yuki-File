@@ -17,6 +17,17 @@ from bot import Bot
 from database.database import db
 from plugins.VoidXTora import check_admin_or_owner
 
+# Import awaiting-input registry from channel_post to prevent it
+# intercepting admin input messages as file links
+try:
+    from plugins.channel_post import mark_awaiting, clear_awaiting
+except ImportError:
+    try:
+        from channel_post import mark_awaiting, clear_awaiting
+    except Exception:
+        def mark_awaiting(uid): pass
+        def clear_awaiting(uid): pass
+
 
 # ─────────────────────────────────────────────
 # HELPERS
@@ -341,6 +352,7 @@ async def awaiting_input_receiver(client: Client, message: Message):
     # ── Caption template ──
     if user_id in _awaiting_template:
         _awaiting_template.discard(user_id)
+        clear_awaiting(user_id)
         if not text:
             await message.reply("<b>❌ Empty template. Aborted.</b>")
             return
@@ -358,6 +370,7 @@ async def awaiting_input_receiver(client: Client, message: Message):
     # ── Channel button link ──
     if user_id in _awaiting_chnl_link:
         _awaiting_chnl_link.discard(user_id)
+        clear_awaiting(user_id)
         if not text.startswith("http"):
             await message.reply("<b>❌ Invalid link. Must start with https://</b>")
             return
@@ -373,6 +386,7 @@ async def awaiting_input_receiver(client: Client, message: Message):
     # ── Channel button title ──
     if user_id in _awaiting_chnl_title:
         _awaiting_chnl_title.discard(user_id)
+        clear_awaiting(user_id)
         if not text:
             await message.reply("<b>❌ Empty title. Aborted.</b>")
             return
@@ -395,6 +409,7 @@ async def setcaption_cmd(client: Client, message: Message):
     if not await check_admin_or_owner(message):
         return
     _awaiting_template.add(message.from_user.id)
+    mark_awaiting(message.from_user.id)
     await message.reply(
         "<b>✍️ Sᴇɴᴅ ʏᴏᴜʀ ᴄᴀᴘᴛɪᴏɴ ᴛᴇᴍᴘʟᴀᴛᴇ ɴᴏᴡ.</b>\n\n"
         + CAPTION_VARIABLES
@@ -412,8 +427,11 @@ async def cancel_input(client: Client, message: Message):
     uid = message.from_user.id
     if uid in _awaiting_template or uid in _awaiting_chnl_link or uid in _awaiting_chnl_title:
         _awaiting_template.discard(uid)
+        clear_awaiting(uid)
         _awaiting_chnl_link.discard(uid)
+        clear_awaiting(uid)
         _awaiting_chnl_title.discard(uid)
+        clear_awaiting(uid)
         await message.reply("<b>❌ Cᴀɴᴄᴇʟʟᴇᴅ.</b>")
 
 
@@ -534,6 +552,7 @@ async def settings_callback(client: Client, cb: CallbackQuery):
 
     elif data == "files_chnl_link":
         _awaiting_chnl_link.add(cb.from_user.id)
+        mark_awaiting(cb.from_user.id)
         await safe_edit(
             cb,
             "<b>🔗 Sᴇɴᴅ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ / ɢʀᴏᴜᴘ ʟɪɴᴋ ɴᴏᴡ.</b>\n\n"
@@ -544,6 +563,7 @@ async def settings_callback(client: Client, cb: CallbackQuery):
 
     elif data == "files_chnl_title":
         _awaiting_chnl_title.add(cb.from_user.id)
+        mark_awaiting(cb.from_user.id)
         await safe_edit(
             cb,
             "<b>✏️ Sᴇɴᴅ ᴛʜᴇ ʙᴜᴛᴛᴏɴ ᴛɪᴛʟᴇ ɴᴏᴡ.</b>\n\n"
@@ -554,7 +574,9 @@ async def settings_callback(client: Client, cb: CallbackQuery):
 
     elif data == "files_cancel_input":
         _awaiting_chnl_link.discard(cb.from_user.id)
+        clear_awaiting(cb.from_user.id)
         _awaiting_chnl_title.discard(cb.from_user.id)
+        clear_awaiting(cb.from_user.id)
         text, markup = await files_text_markup()
         await safe_edit(cb, text, markup)
         await cb.answer("❌ Cancelled")
@@ -584,6 +606,7 @@ async def settings_callback(client: Client, cb: CallbackQuery):
 
     elif data == "caption_set_tmpl":
         _awaiting_template.add(cb.from_user.id)
+        mark_awaiting(cb.from_user.id)
         await safe_edit(
             cb,
             "<b>✍️ Sᴇɴᴅ ʏᴏᴜʀ ᴄᴀᴘᴛɪᴏɴ ᴛᴇᴍᴘʟᴀᴛᴇ ɴᴏᴡ.</b>\n\n"
@@ -605,6 +628,7 @@ async def settings_callback(client: Client, cb: CallbackQuery):
 
     elif data == "caption_cancel_set":
         _awaiting_template.discard(cb.from_user.id)
+        clear_awaiting(cb.from_user.id)
         text, markup = await caption_text_markup()
         await safe_edit(cb, text, markup)
         await cb.answer("❌ Cancelled")
