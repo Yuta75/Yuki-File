@@ -59,6 +59,12 @@ def _parse_episode_season(text: str) -> tuple:
     if ms and me:
         return ms.group(1).zfill(2), me.group(1).zfill(2)
 
+    # 2b. Spaced/underscore-normalised: S01 EP01 or S01 E01 (no brackets)
+    ms2b = re.search(r'\bS(\d{1,2})\b', text, re.IGNORECASE)
+    me2b = re.search(r'\bEP?(\d{1,3})\b', text, re.IGNORECASE)
+    if ms2b and me2b:
+        return ms2b.group(1).zfill(2), me2b.group(1).zfill(2)
+
     # 3. Caption line: "Season : 01" or small-caps unicode variants
     #    Covers both ASCII and small-caps lookalikes by stripping non-ascii first
     plain = text.encode('ascii', errors='ignore').decode()
@@ -184,37 +190,65 @@ def _parse_language(text: str) -> str:
 
 def _parse_title(text: str) -> str:
     """
-    Extracts the show/file title — everything before the first metadata marker.
-    Works on both filenames and multi-line captions.
+    Extracts show/file title from filename or caption first line.
 
-    For captions like:
-        [@Channel] Show Name [S01] [EP01] [480p].mkv
-    it strips the channel tag and returns 'Show Name'.
+    Handles:
+      Bracketed  : [@Channel] Show Name [S01] [EP01] [480p].mkv
+      Underscore : @Channel_Show_Name_S01_EP01_480p
+      Plain      : My Hero Academia Two Heroes 480p
+      Spaced     : One Piece S01E01 720p Dual Audio.mkv
     """
-    # Use first line only (filenames and caption titles are always on line 1)
-    first_line = text.split('\n')[0]
-
-    # Strip leading channel tag: [@channel] or [channel]
-    first_line = re.sub(r'^\s*\[@?[\w_]+\]\s*', '', first_line)
+    # Use first line only
+    line = text.split('\n')[0]
 
     # Strip file extension
-    first_line = re.sub(r'\.\w{2,4}$', '', first_line).strip()
+    line = re.sub(r'\.\w{2,4}$', '', line).strip()
 
-    # Clean brackets content that is metadata (S01, EP01, 480p, etc.)
-    # Keep everything before the first such bracket
-    clean = first_line
-    title_match = re.match(
-        r'^(.*?)(?:\s*[\[\(]\s*(?:[Ss]\d|[Ee][Pp]?\d|\d{3,4}[pP]|4[Kk]|HD|FHD|UHD|Hindi|English|Dual|Multi))',
-        clean,
+    # Strip channel tags BEFORE underscore normalisation
+    # Bracketed: [@Otaku_Hindi_Hub] or [Channel_Name] — safe, always strip
+    line = re.sub(r'^\s*\[\s*@?[\w_]+\s*\]\s*', '', line)
+    # Bare @tag: only strip if it looks like a pure channel handle
+    # i.e. it has 3+ underscore-segments AND ends right before a title word or metadata
+    # Avoids eating the whole string when channel+title are merged without brackets
+    bare_tag = re.match(r'^@([\w_]+)', line)
+    if bare_tag:
+        tag_body = bare_tag.group(1)
+        segments = tag_body.split('_')
+        # If 3 or fewer segments it might just be a short channel name — safe to strip
+        # If more than 3 segments, the title is likely merged in — don't strip
+        if len(segments) <= 3:
+            line = line[bare_tag.end():].lstrip()
+
+    # Normalise underscores to spaces (after tag strip so tags don't lose their _ boundaries)
+    line = line.replace('_', ' ')
+
+    # Metadata stop-pattern — title ends just before any of these tokens
+    STOP = re.compile(
+        r'(?:'
+        r'\[?\s*[Ss]\d{1,2}\s*[Ee]\d{1,3}\s*\]?'  # S01E02 / [S01E02]
+        r'|\[?\s*[Ss]\d{1,2}\s*\]?(?=\s)'           # [S01] followed by space
+        r'|\b[Ss]\d{1,2}\b(?=\s+[Ee][Pp]?\d)'       # S01 before EP01
+        r'|\b[Ee]pisode\s*\d{1,3}\b'                 # Episode 1
+        r'|\[?\s*[Ee][Pp]\s*\d{1,3}\s*\]?'           # EP01 / [EP01]
+        r'|\[?\s*E\d{1,3}\s*\]?'                     # E01 / [E01]
+        r'|\[?\s*\d{3,4}[pP]\s*\]?'                  # [480p] / 480p
+        r'|\b4[Kk]\b|\bFHD\b|\bUHD\b|\bHD\b'        # quality labels
+        r'|\bDual\s*Audio\b|\bMulti\s*Audio\b'        # audio labels
+        r'|\bHindi\s*Dubbed\b|\bHindi\s*Dub\b'        # lang labels
+        r'|\bDual\b|\bMulti\b'                        # shorter audio
+        r'|\bHindi\b|\bEnglish\b|\bJapanese\b'        # language
+        r')',
         re.IGNORECASE
     )
-    if title_match:
-        title = title_match.group(1)
-    else:
-        # No markers found — strip all bracket content and use remainder
-        title = re.sub(r'\[.*?\]|\(.*?\)', '', clean)
 
-    return title.strip().strip('-_. ')
+    m = STOP.search(line)
+    if m:
+        title = line[:m.start()]
+    else:
+        # Nothing found — strip any remaining bracket content
+        title = re.sub(r'\[.*?\]|\(.*?\)', '', line)
+
+    return title.strip().strip('-_[]@(). ')
 
 
 # ─────────────────────────────────────────────
