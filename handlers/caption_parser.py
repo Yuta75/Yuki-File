@@ -24,6 +24,212 @@ SUPPORTED_VARS = {
 }
 
 
+# ─────────────────────────────────────────────
+# INTERNAL: strip bracket wrappers for clean matching
+# ─────────────────────────────────────────────
+
+def _unwrap(text: str) -> str:
+    """Remove [], (), {} wrappers but keep content — used for pre-processing."""
+    return re.sub(r'[\[\](){}]', ' ', text)
+
+
+# ─────────────────────────────────────────────
+# EPISODE & SEASON
+# ─────────────────────────────────────────────
+
+def _parse_episode_season(text: str) -> tuple:
+    """
+    Returns (season, episode) as zero-padded strings, or ('', '') if not found.
+
+    Handles all common formats:
+      Filename style : S01E02, S1E2, s01e02
+      Bracketed      : [S01][EP01], [S01] [EP01], [S1][E2]
+      Inline caption : Season : 01 / Season: 1 / Sᴇᴀsᴏɴ : 01
+      Episode label  : EP01, E01, Episode 1, Eᴘɪsᴏᴅᴇs: 01
+      Combined inline: S01E02 inside brackets
+    """
+    # 1. Classic joined: S01E02
+    m = re.search(r'[Ss](\d{1,2})\s*[Ee](\d{1,3})', text)
+    if m:
+        return m.group(1).zfill(2), m.group(2).zfill(2)
+
+    # 2. Bracketed separate: [S01][EP01] or [S01] [E02]
+    ms = re.search(r'\[S(?:eason\s*)?(\d{1,2})\]', text, re.IGNORECASE)
+    me = re.search(r'\[EP?(?:isode\s*)?(\d{1,3})\]', text, re.IGNORECASE)
+    if ms and me:
+        return ms.group(1).zfill(2), me.group(1).zfill(2)
+
+    # 3. Caption line: "Season : 01" or small-caps unicode variants
+    #    Covers both ASCII and small-caps lookalikes by stripping non-ascii first
+    plain = text.encode('ascii', errors='ignore').decode()
+    ms2 = re.search(r'[Ss]eason\s*[:\-]\s*(\d{1,2})', plain, re.IGNORECASE)
+    me2 = re.search(r'[Ee]p(?:isode)?s?\s*[:\-]\s*(\d{1,3})', plain, re.IGNORECASE)
+    if ms2 or me2:
+        season  = ms2.group(1).zfill(2) if ms2 else ''
+        episode = me2.group(1).zfill(2) if me2 else ''
+        return season, episode
+
+    # 4. Bracketed season only: [S01]
+    ms3 = re.search(r'\[S(\d{1,2})\]', text, re.IGNORECASE)
+    if ms3:
+        # Try standalone episode anywhere
+        me3 = re.search(r'(?:EP?|Episode)\s*(\d{1,3})', text, re.IGNORECASE)
+        return ms3.group(1).zfill(2), (me3.group(1).zfill(2) if me3 else '')
+
+    # 5. Standalone episode only: EP01 / E01 / Episode 1
+    me4 = re.search(r'(?:EP?|Episode)\s*(\d{1,3})', text, re.IGNORECASE)
+    if me4:
+        return '', me4.group(1).zfill(2)
+
+    return '', ''
+
+
+# ─────────────────────────────────────────────
+# QUALITY
+# ─────────────────────────────────────────────
+
+def _parse_quality(text: str) -> str:
+    """
+    Handles both bracketed [480p] and plain 480p formats.
+    Also catches label style: Quality : 480P
+    """
+    # Label style in caption: "Quality : 480p"
+    m = re.search(r'[Qq]uality\s*[:\-]\s*(\S+)', text)
+    if m:
+        return m.group(1).upper().strip('.,')
+
+    # Bracketed or plain
+    m2 = re.search(r'[\[\(]?\s*(4K|2160p|1080p|720p|480p|360p|FHD|UHD|HD)\s*[\]\)]?', text, re.IGNORECASE)
+    return m2.group(1).upper() if m2 else ''
+
+
+# ─────────────────────────────────────────────
+# LANGUAGE / AUDIO
+# ─────────────────────────────────────────────
+
+# Ordered by specificity — first match wins
+_LANG_PATTERNS = [
+    r'Multi[\s\-]?Audio',
+    r'Dual[\s\-]?Audio',
+    r'Hindi[\s\-]?Dubbed',
+    r'Hindi[\s\-]?Dub',
+    r'English[\s\-]?Sub(?:bed)?',
+    r'English',
+    r'Hindi',
+    r'Japanese',
+    r'Tamil',
+    r'Telugu',
+    r'Korean',
+    r'Spanish',
+    r'French',
+    r'German',
+]
+
+def _parse_language(text: str) -> str:
+    """
+    Handles:
+      - Bracketed: [Hindi] [Multi]
+      - Caption label: Audio : Hindi [Multi] #Official
+      - Plain inline: Hindi Dubbed
+    """
+    # Caption label style: "Audio : Hindi [Multi] #Official"
+    # Also handles Unicode small-caps like ᴀᴜᴅɪᴏ by matching the colon separator
+    label = re.search(r'(?:[Aa]udio|udio)\s*[:\-]\s*(.+?)(?:\n|$)', text)
+    if not label:
+        # Fallback: match line containing a colon where RHS has a known lang
+        label = re.search(r':\s*([^\n]*(?:Hindi|English|Multi|Dual|Japanese|Tamil|Telugu)[^\n]*)', text, re.IGNORECASE)
+    if label:
+        raw = label.group(1).strip()
+        found_langs = []
+
+        # Check for Multi/Dual audio keywords first (ASCII, always readable)
+        if re.search(r'Multi', raw, re.IGNORECASE):
+            found_langs.append('Multi Audio')
+        elif re.search(r'Dual', raw, re.IGNORECASE):
+            found_langs.append('Dual Audio')
+
+        # Try ASCII language patterns
+        for pat in _LANG_PATTERNS:
+            if 'Multi' in pat or 'Dual' in pat:
+                continue  # already handled above
+            m = re.search(pat, raw, re.IGNORECASE)
+            if m:
+                token = m.group(0).strip()
+                if token not in found_langs:
+                    found_langs.append(token)
+                break
+
+        # If no ASCII lang matched, try detecting Hindi/English from context
+        # (small-caps Unicode like ʜɪɴᴅɪ won't match regex but context hints)
+        if not any(l for l in found_langs if l not in ('Multi Audio', 'Dual Audio')):
+            # Check surrounding filename/caption for language clues
+            pass  # lang_found will be filled by generic search below
+
+        if found_langs:
+            return ' + '.join(found_langs)
+        # Fall through to generic search if nothing matched in label
+
+    # Generic search anywhere in text
+    for pat in _LANG_PATTERNS:
+        m = re.search(pat, text, re.IGNORECASE)
+        if m:
+            return m.group(0).strip()
+
+    return ''
+
+
+# ─────────────────────────────────────────────
+# TITLE
+# ─────────────────────────────────────────────
+
+def _parse_title(text: str) -> str:
+    """
+    Extracts the show/file title — everything before the first metadata marker.
+    Works on both filenames and multi-line captions.
+
+    For captions like:
+        [@Channel] Show Name [S01] [EP01] [480p].mkv
+    it strips the channel tag and returns 'Show Name'.
+    """
+    # Use first line only (filenames and caption titles are always on line 1)
+    first_line = text.split('\n')[0]
+
+    # Strip leading channel tag: [@channel] or [channel]
+    first_line = re.sub(r'^\s*\[@?[\w_]+\]\s*', '', first_line)
+
+    # Strip file extension
+    first_line = re.sub(r'\.\w{2,4}$', '', first_line).strip()
+
+    # Clean brackets content that is metadata (S01, EP01, 480p, etc.)
+    # Keep everything before the first such bracket
+    clean = first_line
+    title_match = re.match(
+        r'^(.*?)(?:\s*[\[\(]\s*(?:[Ss]\d|[Ee][Pp]?\d|\d{3,4}[pP]|4[Kk]|HD|FHD|UHD|Hindi|English|Dual|Multi))',
+        clean,
+        re.IGNORECASE
+    )
+    if title_match:
+        title = title_match.group(1)
+    else:
+        # No markers found — strip all bracket content and use remainder
+        title = re.sub(r'\[.*?\]|\(.*?\)', '', clean)
+
+    return title.strip().strip('-_. ')
+
+
+# ─────────────────────────────────────────────
+# SIZE
+# ─────────────────────────────────────────────
+
+def _parse_size(text: str) -> str:
+    m = re.search(r'(\d+(?:\.\d+)?\s*(?:MB|GB|KB))', text, re.IGNORECASE)
+    return m.group(1).upper() if m else ''
+
+
+# ─────────────────────────────────────────────
+# MAIN PARSER
+# ─────────────────────────────────────────────
+
 def parse_metadata(text: str) -> dict:
     """
     Parses a file caption or filename and returns a dict of all detected values.
@@ -32,70 +238,23 @@ def parse_metadata(text: str) -> dict:
     if not text:
         return _empty()
 
-    data = {}
+    season, episode = _parse_episode_season(text)
+    language        = _parse_language(text)
 
-    # ── EPISODE & SEASON ─────────────────────────────────────────
-    # S01E02 / S1E2 / s01e02
-    ep_season = re.search(r'[Ss](\d{1,2})[Ee](\d{1,3})', text)
-    if ep_season:
-        data['season']  = ep_season.group(1).zfill(2)
-        data['episode'] = ep_season.group(2).zfill(2)
-    else:
-        # Standalone: EP01 / E01 / Episode 1
-        ep_only = re.search(r'(?:EP?|Episode)\s*(\d{1,3})', text, re.IGNORECASE)
-        data['episode'] = ep_only.group(1).zfill(2) if ep_only else ''
-        data['season']  = ''
+    return {
+        'season'  : season,
+        'episode' : episode,
+        'quality' : _parse_quality(text),
+        'language': language,
+        'audio'   : language,           # {audio} is an alias for {language}
+        'title'   : _parse_title(text),
+        'size'    : _parse_size(text),
+    }
 
-    # ── QUALITY ──────────────────────────────────────────────────
-    quality = re.search(
-        r'(4K|2160p|1080p|720p|480p|360p|FHD|UHD|HD)',
-        text, re.IGNORECASE
-    )
-    data['quality'] = quality.group(1).upper() if quality else ''
 
-    # ── LANGUAGE / AUDIO ─────────────────────────────────────────
-    # Ordered by specificity — first match wins
-    lang_patterns = [
-        r'(Multi[\s\-]?Audio)',
-        r'(Dual[\s\-]?Audio)',
-        r'(Hindi[\s\-]?Dubbed)',
-        r'(Hindi[\s\-]?Dub)',
-        r'(English[\s\-]?Sub(?:bed)?)',
-        r'(English)',
-        r'(Hindi)',
-        r'(Japanese)',
-        r'(Tamil)',
-        r'(Telugu)',
-        r'(Korean)',
-        r'(Spanish)',
-        r'(French)',
-        r'(German)',
-    ]
-    lang_found = ''
-    for pat in lang_patterns:
-        m = re.search(pat, text, re.IGNORECASE)
-        if m:
-            lang_found = m.group(1).strip()
-            break
-    data['language'] = lang_found
-    data['audio']    = lang_found   # {audio} is an alias
-
-    # ── TITLE ────────────────────────────────────────────────────
-    # Everything before the first recognisable metadata marker
-    clean = re.sub(r'[@\[\](){}]', ' ', text)
-    title_match = re.match(
-        r'^(.+?)(?:\s*[-_]?\s*(?:[Ss]\d{1,2}[Ee]\d{1,3}|\d{3,4}p|4K|HD|FHD|UHD|Hindi|English|Dual|Multi))',
-        clean
-    )
-    title = title_match.group(1).strip().strip('-_. ') if title_match else ''
-    data['title'] = title
-
-    # ── FILE SIZE ────────────────────────────────────────────────
-    size = re.search(r'(\d+(?:\.\d+)?\s*(?:MB|GB|KB))', text, re.IGNORECASE)
-    data['size'] = size.group(1).upper() if size else ''
-
-    return data
-
+# ─────────────────────────────────────────────
+# TEMPLATE FILLER
+# ─────────────────────────────────────────────
 
 def apply_template(template: str, original_caption: str, file_name: str = '') -> str:
     """
@@ -103,8 +262,21 @@ def apply_template(template: str, original_caption: str, file_name: str = '') ->
     Falls back to filename if caption is empty.
     Unrecognised variables are left as-is so future additions don't break old templates.
     """
-    source = original_caption or file_name or ''
-    meta   = parse_metadata(source)
+    # Parse from both sources and merge:
+    # - Title: filename wins (captions have decorative first lines)
+    # - Everything else: caption wins, fallback to filename
+    meta_cap  = parse_metadata(original_caption) if original_caption else _empty()
+    meta_file = parse_metadata(file_name)         if file_name        else _empty()
+
+    meta = {
+        'title'   : meta_file.get('title')    or meta_cap.get('title',    ''),
+        'season'  : meta_cap.get('season')    or meta_file.get('season',   ''),
+        'episode' : meta_cap.get('episode')   or meta_file.get('episode',  ''),
+        'quality' : meta_cap.get('quality')   or meta_file.get('quality',  ''),
+        'language': meta_cap.get('language')  or meta_file.get('language', ''),
+        'audio'   : meta_cap.get('audio')     or meta_file.get('audio',    ''),
+        'size'    : meta_cap.get('size')      or meta_file.get('size',     ''),
+    }
 
     result = template
     result = result.replace('{caption}',  original_caption or '')
