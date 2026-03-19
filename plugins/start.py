@@ -17,37 +17,39 @@ import time
 from datetime import datetime, timedelta
 from pyrogram import Client, filters, __version__
 from pyrogram.enums import ParseMode, ChatAction
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, ChatInviteLink, ChatPrivileges
+from pyrogram.types import (
+    Message, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery, ReplyKeyboardMarkup, ChatInviteLink, ChatPrivileges
+)
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
 from pyrogram.errors import FloodWait, UserIsBlocked, InputUserDeactivated, UserNotParticipant
+
 from bot import Bot
 from config import *
 from helper_func import *
 from database.database import *
-from caption_parser import apply_template
+from handlers.caption_parser import apply_template
+from handlers.chat_action import show_action, show_file_action, refresh_action, NORMAL_ACTION
 
 BAN_SUPPORT = f"{BAN_SUPPORT}"
 
-# Random chat actions shown while fetching files
-FILE_ACTIONS = [
-    ChatAction.UPLOAD_VIDEO,
-    ChatAction.UPLOAD_DOCUMENT,
-    ChatAction.PLAYING,
-    ChatAction.UPLOAD_VIDEO_NOTE,
-]
 
+# ─────────────────────────────────────────────
+# CAPTION BUILDER
+# ─────────────────────────────────────────────
 
-async def build_caption(original: str, file_name: str, settings: dict) -> str:
+async def build_caption(original: str, file_name: str, settings: dict):
     """
-    Priority:
-    1. hide_caption ON  → no caption (None)
-    2. template mode ON → fill template with auto-detected vars
-    3. custom_caption ON → original + CUSTOM_CAPTION suffix
-    4. fallback → original as-is
-    Returns None if caption should be completely hidden.
+    Priority order:
+      1. hide_caption ON          → return None (file sent with no caption)
+      2. template mode ON         → fill template with auto-detected vars
+      3. custom_caption ON        → original + CUSTOM_CAPTION suffix
+      4. fallback                 → original as-is
+
+    Returns None or a string.
     """
     if settings.get("hide_caption", False):
-        return None  # Signal to send with no caption
+        return None
 
     if settings.get("caption_template_enabled", False):
         template = settings.get("caption_template", "")
@@ -60,17 +62,15 @@ async def build_caption(original: str, file_name: str, settings: dict) -> str:
     return original
 
 
-def make_channel_join_markup(channel_title: str, channel_link: str) -> InlineKeyboardMarkup:
-    return InlineKeyboardMarkup([[
-        InlineKeyboardButton(f"📢 {channel_title}", url=channel_link)
-    ]])
-
+# ─────────────────────────────────────────────
+# /start HANDLER
+# ─────────────────────────────────────────────
 
 @Bot.on_message(filters.command('start') & filters.private)
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
 
-    # Check if user is banned
+    # ── Ban check ──
     banned_users = await db.get_ban_users()
     if user_id in banned_users:
         return await message.reply_text(
@@ -83,14 +83,14 @@ async def start_command(client: Client, message: Message):
 
     bot_settings = await db.get_settings()
 
-    # Check Force Subscription
+    # ── Force sub check ──
     if bot_settings.get('fsub_mode', True):
         if not await is_subscribed(client, user_id):
             return await not_joined(client, message)
 
     FILE_AUTO_DELETE = await db.get_del_timer()
 
-    # Add user if not already present
+    # ── Register user ──
     if not await db.present_user(user_id):
         try:
             await db.add_user(user_id)
@@ -99,26 +99,28 @@ async def start_command(client: Client, message: Message):
 
     text = message.text
 
-    # ── FILE DELIVERY ──────────────────────────────────────────────
+    # ══════════════════════════════════════════
+    # FILE DELIVERY
+    # ══════════════════════════════════════════
     if len(text) > 7:
 
-        action = random.choice(FILE_ACTIONS)
-        await client.send_chat_action(message.chat.id, action)
+        # Show file action for full duration — visible even on fast servers
+        action = await show_file_action(client, message.chat.id)
 
         try:
             base64_string = text.split(" ", 1)[1]
         except IndexError:
             return
 
-        string = await decode(base64_string)
+        string   = await decode(base64_string)
         argument = string.split("-")
 
         ids = []
         if len(argument) == 3:
             try:
                 start = int(int(argument[1]) / abs(client.db_channel.id))
-                end = int(int(argument[2]) / abs(client.db_channel.id))
-                ids = range(start, end + 1) if start <= end else list(range(start, end - 1, -1))
+                end   = int(int(argument[2]) / abs(client.db_channel.id))
+                ids   = range(start, end + 1) if start <= end else list(range(start, end - 1, -1))
             except Exception as e:
                 print(f"Error decoding IDs: {e}")
                 return
@@ -139,19 +141,20 @@ async def start_command(client: Client, message: Message):
         finally:
             await temp_msg.delete()
 
-        # Channel button settings
+        # Channel button config
         chnl_btn_enabled = bot_settings.get("channel_button", False)
-        chnl_btn_mode = bot_settings.get("channel_button_mode", "each")  # "each" or "end"
-        chnl_btn_title = bot_settings.get("channel_button_title", "📢 Join Channel")
-        chnl_btn_link = bot_settings.get("channel_button_link", "")
+        chnl_btn_mode    = bot_settings.get("channel_button_mode", "each")  # "each" | "end"
+        chnl_btn_title   = bot_settings.get("channel_button_title", "📢 Join Channel")
+        chnl_btn_link    = bot_settings.get("channel_button_link", "")
 
         codeflix_msgs = []
 
         for msg in messages:
             original_caption = msg.caption.html if msg.caption else ""
-            # Get filename from media if available
+
+            # Try to get filename from media
             file_name = ""
-            for attr in ["document", "video", "audio"]:
+            for attr in ("document", "video", "audio"):
                 media = getattr(msg, attr, None)
                 if media and getattr(media, "file_name", None):
                     file_name = media.file_name
@@ -160,7 +163,7 @@ async def start_command(client: Client, message: Message):
             caption = await build_caption(original_caption, file_name, bot_settings)
             protect = bot_settings.get('protect_content', False)
 
-            # Reply markup per file
+            # Per-file channel button
             if chnl_btn_enabled and chnl_btn_mode == "each" and chnl_btn_link:
                 reply_markup = InlineKeyboardMarkup([[
                     InlineKeyboardButton(chnl_btn_title, url=chnl_btn_link)
@@ -168,7 +171,8 @@ async def start_command(client: Client, message: Message):
             else:
                 reply_markup = msg.reply_markup if DISABLE_CHANNEL_BUTTON else None
 
-            await client.send_chat_action(message.chat.id, action)
+            # Keep action alive during multi-file loops
+            await refresh_action(client, message.chat.id, action)
 
             try:
                 snt_msg = await msg.copy(
@@ -193,9 +197,9 @@ async def start_command(client: Client, message: Message):
             except:
                 pass
 
-        # Auto delete + delete notification
+        # ── Auto delete ──
         if FILE_AUTO_DELETE > 0:
-            # Channel button at end (on delete alert message)
+            # Channel button on delete alert (end mode)
             end_btn_markup = None
             if chnl_btn_enabled and chnl_btn_mode == "end" and chnl_btn_link:
                 end_btn_markup = InlineKeyboardMarkup([[
@@ -203,7 +207,8 @@ async def start_command(client: Client, message: Message):
                 ]])
 
             notification_msg = await message.reply(
-                f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ {get_exp_time(FILE_AUTO_DELETE)}. Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>",
+                f"<b>Tʜɪs Fɪʟᴇ ᴡɪʟʟ ʙᴇ Dᴇʟᴇᴛᴇᴅ ɪɴ {get_exp_time(FILE_AUTO_DELETE)}. "
+                f"Pʟᴇᴀsᴇ sᴀᴠᴇ ᴏʀ ғᴏʀᴡᴀʀᴅ ɪᴛ ᴛᴏ ʏᴏᴜʀ sᴀᴠᴇᴅ ᴍᴇssᴀɢᴇs ʙᴇғᴏʀᴇ ɪᴛ ɢᴇᴛs Dᴇʟᴇᴛᴇᴅ.</b>",
                 reply_markup=end_btn_markup
             )
 
@@ -222,7 +227,6 @@ async def start_command(client: Client, message: Message):
                     if message.command and len(message.command) > 1
                     else None
                 )
-                # Build final keyboard — reload + channel button if "end" mode
                 final_buttons = []
                 if reload_url:
                     final_buttons.append([InlineKeyboardButton("ɢᴇᴛ ғɪʟᴇ ᴀɢᴀɪɴ!", url=reload_url)])
@@ -230,16 +234,19 @@ async def start_command(client: Client, message: Message):
                     final_buttons.append([InlineKeyboardButton(chnl_btn_title, url=chnl_btn_link)])
 
                 await notification_msg.edit(
-                    "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\nᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
+                    "<b>ʏᴏᴜʀ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ ɪꜱ ꜱᴜᴄᴄᴇꜱꜱꜰᴜʟʟʏ ᴅᴇʟᴇᴛᴇᴅ !!\n\n"
+                    "ᴄʟɪᴄᴋ ʙᴇʟᴏᴡ ʙᴜᴛᴛᴏɴ ᴛᴏ ɢᴇᴛ ʏᴏᴜʀ ᴅᴇʟᴇᴛᴇᴅ ᴠɪᴅᴇᴏ / ꜰɪʟᴇ 👇</b>",
                     reply_markup=InlineKeyboardMarkup(final_buttons) if final_buttons else None
                 )
             except Exception as e:
                 print(f"Error updating notification: {e}")
 
-    # ── NORMAL /start ───────────────────────────────────────────────
+    # ══════════════════════════════════════════
+    # NORMAL /start
+    # ══════════════════════════════════════════
     else:
-        await client.send_chat_action(message.chat.id, ChatAction.TYPING)
-        await asyncio.sleep(0.6)
+        # Typing action held for full duration — visible on fast servers
+        await show_action(client, message.chat.id, NORMAL_ACTION)
 
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("• ᴍᴏʀᴇ ᴄʜᴀɴɴᴇʟs •", url="https://t.me/+rt0k66qGSK83NDRl")],
@@ -270,10 +277,9 @@ chat_data_cache = {}
 
 async def not_joined(client: Client, message: Message):
     temp = await message.reply("<b><i>ᴡᴀɪᴛ ᴀ sᴇᴄ..</i></b>")
-
     user_id = message.from_user.id
     buttons = []
-    count = 0
+    count   = 0
 
     try:
         all_channels = await db.show_channels()
