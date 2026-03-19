@@ -21,21 +21,38 @@ EXCLUDED_COMMANDS = [
 ]
 
 
+# Global awaiting-input registry — settings.py writes to this,
+# channel_post.py reads from it. Avoids circular imports.
+_AWAITING_INPUT: set = set()
+
+def mark_awaiting(user_id: int):
+    _AWAITING_INPUT.add(user_id)
+
+def clear_awaiting(user_id: int):
+    _AWAITING_INPUT.discard(user_id)
+
 async def is_awaiting_input(user_id: int) -> bool:
     """
-    Returns True if this user is currently in an input-awaiting state
+    Returns True if this user is currently waiting to send an admin input
     (caption template, channel link, channel title).
-    Checks the sets exported from settings.py.
+    settings.py calls mark_awaiting/clear_awaiting to keep this in sync.
     """
-    try:
-        from plugins.settings import _awaiting_template, _awaiting_chnl_link, _awaiting_chnl_title
-        return (
-            user_id in _awaiting_template
-            or user_id in _awaiting_chnl_link
-            or user_id in _awaiting_chnl_title
-        )
-    except Exception:
-        return False
+    if user_id in _AWAITING_INPUT:
+        return True
+    # Fallback: import directly from settings module
+    # Try both absolute (plugins.settings) and relative (settings) paths
+    for mod_path in ('plugins.settings', 'settings'):
+        try:
+            import importlib
+            mod = importlib.import_module(mod_path)
+            return (
+                user_id in getattr(mod, '_awaiting_template', set())
+                or user_id in getattr(mod, '_awaiting_chnl_link', set())
+                or user_id in getattr(mod, '_awaiting_chnl_title', set())
+            )
+        except Exception:
+            continue
+    return False
 
 
 @Bot.on_message(filters.private & admin & ~filters.command(EXCLUDED_COMMANDS))
