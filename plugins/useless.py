@@ -3,8 +3,20 @@ import os
 import random
 import sys
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pyrogram import Client, filters, __version__
+
+# India Standard Time — UTC+5:30
+IST = timezone(timedelta(hours=5, minutes=30))
+
+def now_ist() -> datetime:
+    return datetime.now(IST)
+
+def to_ist(dt: datetime) -> datetime:
+    """Convert any datetime to IST. Assumes UTC if naive."""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(IST)
 from pyrogram.enums import ParseMode, ChatAction
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, ReplyKeyboardMarkup, ChatInviteLink, ChatPrivileges
 from pyrogram.errors.exceptions.bad_request_400 import UserNotParticipant
@@ -24,24 +36,28 @@ async def stats(bot: Bot, message: Message):
 
     pro = await message.reply("<b><i>ᴘʟᴇᴀsᴇ ᴡᴀɪᴛ..</i></b>", quote=True)
 
-    now = datetime.now()
-    delta = now - bot.uptime
-    uptime_str = get_readable_time(delta.seconds)
+    # All times in IST
+    now_i      = now_ist()
+    uptime_ist = to_ist(bot.uptime)
+    delta      = now_i - uptime_ist
+    uptime_str = get_readable_time(int(delta.total_seconds()))
 
     total_users = await db.full_userbase()
     total_count = len(total_users)
 
-    # Users joined today (added_on field — fallback to N/A if not tracked)
+    # Users joined today — query using IST midnight as boundary
+    # added_on is stored as UTC in DB, so convert IST midnight → UTC for query
+    today_ist_midnight = now_i.replace(hour=0, minute=0, second=0, microsecond=0)
+    today_utc_midnight = today_ist_midnight.astimezone(timezone.utc).replace(tzinfo=None)
     try:
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
         today_users = await db.user_data.count_documents(
-            {"added_on": {"$gte": today_start}}
+            {"added_on": {"$gte": today_utc_midnight}}
         )
     except Exception:
         today_users = "N/A"
 
-    # Bot started date
-    started_on = bot.uptime.strftime("%d %b %Y, %I:%M %p")
+    # Bot started date in IST
+    started_on = uptime_ist.strftime("%d %b %Y, %I:%M %p IST")
 
     text = (
         "<b><blockquote>📊 Bᴏᴛ Sᴛᴀᴛɪsᴛɪᴄs</blockquote></b>\n\n"
