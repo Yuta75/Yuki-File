@@ -66,7 +66,11 @@ class Rohit:
         return bool(found)
 
     async def add_user(self, user_id: int):
-        await self.user_data.insert_one({'_id': user_id})
+        from datetime import datetime
+        await self.user_data.insert_one({
+            '_id': user_id,
+            'added_on': datetime.utcnow()   # stored as UTC, displayed as IST in stats
+        })
         return
 
     async def full_userbase(self):
